@@ -22,18 +22,22 @@ bayeux.bind 'handshake', (client_id) ->
 client = bayeux.getClient()
 
 handle_event = (path, msg) ->
-    console.log "publishing to channel " + path #+ " message " + JSON.stringify(msg)
+    console.log "publishing to channel " + path + " message " + JSON.stringify(msg)
     client.publish path, msg
 
 helsinki = require './helsinki.js'
 manchester = require './manchester.js'
+tampere = require './tampere.js'
 
 # Create new real-time data converters, hel_client and man_client, and pass handle_event
 # function for them that is used for publishing real-time public transport data to the
 # city-navigator clients that connect to this server. After creating a converter call
 # it's connect function to connect to the real-time data provider, for example,
 # HSL Live server.
-hel_client = new helsinki.HSLClient handle_event
-hel_client.connect()
-man_client = new manchester.TfGMClient handle_event
-man_client.connect()
+#hel_client = new helsinki.HSLClient handle_event
+#hel_client.connect()
+#man_client = new manchester.TfGMClient handle_event
+#man_client.connect()
+tam_client = new tampere.TampereClient handle_event
+tam_client.connect()
+

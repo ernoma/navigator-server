@@ -18,6 +18,8 @@
     "grunt-contrib-watch": "~0.3.1",
     "grunt-contrib-coffee": "~0.6.0",
     "faye": "~0.8.9",
-    "carrier": "~0.1.10"
+    "carrier": "~0.1.10",
+    "elementtree": "~0.1.5",
+    "moment": "~2.0.0"
   }
 }
