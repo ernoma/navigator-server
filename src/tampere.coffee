@@ -30,7 +30,8 @@ class TampereClient
         @client.on 'connect', (conn) =>
             console.log "TampereClient connected"
             #console.log @.requestAllVehicles()
-            @client.write @.requestAllVehicles()
+            @client.write @.subscribeAllVehicles()
+            #@client.write @.requestAllVehicles()
 
         line_handler = (line) =>
             @.handle_line line
@@ -98,7 +99,14 @@ class TampereClient
                 @callback path, out_info, @args
             
             receivedData = ""
-            
+
+    addVehicleMonitoringRequest: (parentElement, date, vehicleMonitoringRefText) ->
+        vehicleMonitoringRequest = subElement parentElement, 'VehicleMonitoringRequest'
+        vehicleMonitoringRequest.set 'version', '1.3'
+        vrequestTimestamp = subElement vehicleMonitoringRequest, 'RequestTimestamp'
+        vrequestTimestamp.text = date
+        vehicleMonitoringRef = subElement vehicleMonitoringRequest, 'VehicleMonitoringRef'
+        vehicleMonitoringRef.text = vehicleMonitoringRefText
 
     requestAllVehicles: ->
     
@@ -112,19 +120,50 @@ class TampereClient
         serviceRequest = subElement root, 'ServiceRequest'
         requestTimestamp = subElement serviceRequest, 'RequestTimestamp'
         date = moment().format()
-        requestTimestamp.text = 
+        requestTimestamp.text = date
         requestorRef = subElement serviceRequest, 'RequestorRef'
         requestorRef.text = "CITYNAVI" # TODO use real ParticipantCode as RequestorRef
-        vehicleMonitoringRequest = subElement serviceRequest, 'VehicleMonitoringRequest'
-        vehicleMonitoringRequest.set 'version', '1.3'
-        vrequestTimestamp = subElement vehicleMonitoringRequest, 'RequestTimestamp'
-        vrequestTimestamp.text = date
-        vehicleMonitoringRef = subElement vehicleMonitoringRequest, 'VehicleMonitoringRef'
-        vehicleMonitoringRef.text = "VEHICLES_ALL"
+        
+        @.addVehicleMonitoringRequest serviceRequest, date, "VEHICLES_ALL"
         
         etree = new ElementTree root
         
         return etree.write {'xml_declaration': true}
         
+    subscribeAllVehicles: ->
+        root = element 'Siri'
+        root.set 'xmlns', 'http://www.siri.org.uk/siri'
+        root.set 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance'
+        root.set 'version', '1.3'
+        root.set 'xsi:schemaLocation', 'http://www.kizoom.com/standards/siri/schema/1.3/siri.xsd'
+      
+        subscriptionRequest = subElement root, 'SubscriptionRequest'
+        requestTimestamp = subElement subscriptionRequest, 'RequestTimestamp'
+        date = moment().format()
+        requestTimestamp.text = date
+        requestorRef = subElement subscriptionRequest, 'RequestorRef'
+        requestorRef.text = "CITYNAVI" # TODO use real ParticipantCode as RequestorRef
 
-module.exports.TampereClient = TampereClient # make TampereClient visible in server.coffee
+        vehicleMonitoringSubscriptionRequest =
+            subElement subscriptionRequest, 'VehicleMonitoringSubscriptionRequest'
+        subscriptionIdentifier =
+            subElement vehicleMonitoringSubscriptionRequest, 'SubscriptionIdentifier'
+        subscriptionIdentifier.text = "00000001" # TODO use real SubscriptionIdentifier
+        initialTerminationTime =
+            subElement vehicleMonitoringSubscriptionRequest, 'InitialTerminationTime'
+        initialTerminationTime.text =
+          moment().add('days', 365).format() #TODO use shorter terminaton time and renew the subscription
+        
+        @.addVehicleMonitoringRequest vehicleMonitoringSubscriptionRequest, date, "VEHICLES_ALL"
+        
+        incrementalUpdates =
+            subElement vehicleMonitoringSubscriptionRequest, 'IncrementalUpdates'
+        incrementalUpdates.text = "false" #TODO use true to optimize resource use
+        updateInterval = subElement vehicleMonitoringSubscriptionRequest, 'UpdateInterval'
+        updateInterval.text = "PT1S" # 1/s, see http://www.w3schools.com/schema/schema_dtypes_date.asp
+        
+        etree = new ElementTree root
+        
+        return etree.write {'xml_declaration': true}
+
+module.exports.TampereClient = TampereClient # make TampereClient visible in server.coffeesubscriptionRequest
