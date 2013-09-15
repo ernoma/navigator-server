@@ -1,4 +1,5 @@
-net = require 'net'
+request = require 'request'
+http = require 'http'
 moment = require 'moment'
 et = require 'elementtree'
 XML = et.XML;
@@ -9,6 +10,12 @@ subElement = et.SubElement;
 receivedData = "";
 
 fs = require 'fs'
+
+sirihost = require './sirihost.js'
+
+http_request_options = 
+    url: "http://" + sirihost.serverhost + ":" + sirihost.serverport + '/siriaccess/vm/rest'
+    method: 'GET'
 
 # make vehicleMonitoringSubscriptionRequest with VehicleMonitoringDetailLevel=basic
 # see http://www.kizoom.com/standards/siri/schema/1.0/examples/exv_vehicleMonitoring_subscriptionRequest.xml and SIRI Handbook, chapter 6 "SIRI Vehcile Monitoring (VM)
@@ -25,80 +32,87 @@ class TampereClient
     constructor: (@callback, @args) ->
 
     connect: ->
-        # Connect to HSL Live server via PUSH interface
-        @client = net.connect 1337, 'localhost' 
-        @client.on 'connect', (conn) =>
-            console.log "TampereClient connected"
-            #console.log @.requestAllVehicles()
-            @client.write @.subscribeAllVehicles()
-            #@client.write @.requestAllVehicles()
-
-        line_handler = (line) =>
-            @.handle_line line
-
-        @client.on 'data', (data) ->
-          line_handler data.toString()
-
-    # handle_line function creates out_info objects of the lines received from carrier
+        setInterval @get_data, 1000, @handle_data, @callback
+    
+    get_data: (handle_data, callback) ->
+        request http_request_options, (err, res, data) ->
+            #console.log err
+            #console.log 'status code: ' + res.statusCode.toString()
+            #console.log 'headers: ' + JSON.stringify(res.headers)
+            #console.log 'body: ' + data + "\n"
+            if !err and res.statusCode is 200
+                handle_data JSON.parse(data), callback
+    
+    # handle_data function creates out_info objects of the data received from siri server
     # and calls @callback to handle the created out_info objects. The out_info object
     # format should be same as for the manchester.coffee.
-    handle_line: (line) ->
-        #console.log "Received line " + line
-        receivedData += line
-        if receivedData.indexOf("</Siri>") != -1
-            #fs.writeFile "response.xml", receivedData, (err) ->
-            etree = et.parse receivedData
-            
-            #VehicleRef / FramedVehicleJourneyRef.DatedVehicleJourneyRef == vehicle.id
-            #VehicleRef / OriginName-DestinationName == vehicle.label
-            #LineRef == trip.route
-            #DirectionRef == trip.direction
-            #VehicleLocation.Latitude == position.latitude
-            #VehicleLocation.Longitude == position.longitude
-            #Bearing = position.bearing
-            #RecordedAtTime in unix_epoch_gps_time / 1000 == timestamp
-            
-            #console.log etree
-            vehicleActivities = etree.findall './/VehicleActivity'
-            console.log vehicleActivities.length
-            #console.log etree.findall('.//MonitoredVehicleJourney')
-            
-            for vehicleActivity in vehicleActivities
-                monitoredVehicleJourney = vehicleActivity.find './MonitoredVehicleJourney'
-                vehicle_id = monitoredVehicleJourney.find('./VehicleRef').text
-                #console.log vehicle_id
-                vehicle_label = monitoredVehicleJourney.find('./OriginName').text + "-" +
-                    monitoredVehicleJourney.find('./DestinationName').text
-                trip_route = monitoredVehicleJourney.find('./LineRef').text
-                trip_direction = monitoredVehicleJourney.find('./DirectionRef').text
-                position_latitude = monitoredVehicleJourney.find('./VehicleLocation/Latitude').text
-                position_longitude = monitoredVehicleJourney.find('./VehicleLocation/Longitude').text
-                #console.log position_longitude1369715515011
-                position_bearing = monitoredVehicleJourney.find('./Bearing').text
-                recordedAtTime = vehicleActivity.find('./RecordedAtTime').text
-                #console.log recordedAtTime
-                date = Date.parse moment(recordedAtTime)
-                #console.log date
-                timestamp = date / 1000
-                #console.log timestamp
-                
+    handle_data: (data, callback) ->
+        #console.log JSON.stringify(data)
+        #console.log data.Siri.ServiceDelivery.VehicleMonitoringDelivery
+        for VehicleMonitoringDelivery in data.Siri.ServiceDelivery.VehicleMonitoringDelivery
+            #console.log "VehicleMonitoringDelivery" + JSON.stringify(VehicleMonitoringDelivery) + "\n"
+            for VehicleActivity in VehicleMonitoringDelivery.VehicleActivity
+                #console.log "VehicleActivity" + JSON.stringify(VehicleActivity) + "\n"
+                MonitoredVehicleJourney = VehicleActivity.MonitoredVehicleJourney
+                #console.log "MonitoredVehicleJourney" + MonitoredVehicleJourney + "\n"
+
                 out_info =
                     vehicle:
-                        id: vehicle_id
-                        label: vehicle_label
+                        id: MonitoredVehicleJourney.VehicleRef.value
+                        label: MonitoredVehicleJourney.OriginName.value
                     trip:
-                        route: trip_route
-                        direction: trip_direction
+                        route: MonitoredVehicleJourney.LineRef.value
+                        direction: MonitoredVehicleJourney.DirectionRef.value
                     position:
-                        latitude: parseFloat position_latitude
-                        longitude: parseFloat position_longitude
-                        bearing: parseFloat position_bearing
-                    timestamp: timestamp
-                
-                path = "/location/tampere/#{trip_route}/#{vehicle_id}"
-                @callback path, out_info, @args
+                        latitude: MonitoredVehicleJourney.VehicleLocation.Latitude
+                        longitude: MonitoredVehicleJourney.VehicleLocation.Longitude
+                        bearing: MonitoredVehicleJourney.Bearing
+                    timestamp: VehicleActivity.RecordedAtTime
+                    
+                path = "/location/tampere/#{out_info.trip.route}/#{out_info.vehicle.id}"
+                callback path, out_info, @args
             
-            receivedData = ""
+    handle_xml_data: (data) ->
+        etree = et.parse data
+        #console.log etree
+        vehicleActivities = etree.findall './/VehicleActivity'
+        console.log vehicleActivities.length
+        #console.log etree.findall('.//MonitoredVehicleJourney')
+            
+        for vehicleActivity in vehicleActivities
+            monitoredVehicleJourney = vehicleActivity.find './MonitoredVehicleJourney'
+            vehicle_id = monitoredVehicleJourney.find('./VehicleRef').text
+            #console.log vehicle_id
+            vehicle_label = monitoredVehicleJourney.find('./OriginName').text + "-" +
+                monitoredVehicleJourney.find('./DestinationName').text
+            trip_route = monitoredVehicleJourney.find('./LineRef').text
+            trip_direction = monitoredVehicleJourney.find('./DirectionRef').text
+            position_latitude = monitoredVehicleJourney.find('./VehicleLocation/Latitude').text
+            position_longitude = monitoredVehicleJourney.find('./VehicleLocation/Longitude').text
+            #console.log position_longitude1369715515011
+            position_bearing = monitoredVehicleJourney.find('./Bearing').text
+            recordedAtTime = vehicleActivity.find('./RecordedAtTime').text
+            #console.log recordedAtTime
+            date = Date.parse moment(recordedAtTime)
+            #console.log date
+            timestamp = date / 1000
+            #console.log timestamp
+                
+            out_info =
+                vehicle:
+                    id: vehicle_id
+                    label: vehicle_label
+                trip:
+                    route: trip_route
+                    direction: trip_direction
+                position:
+                    latitude: parseFloat position_latitude
+                    longitude: parseFloat position_longitude
+                    bearing: parseFloat position_bearing
+                timestamp: timestamp
+                
+            path = "/location/tampere/#{trip_route}/#{vehicle_id}"
+            @callback path, out_info, @args
 
     addVehicleMonitoringRequest: (parentElement, date, vehicleMonitoringRefText) ->
         vehicleMonitoringRequest = subElement parentElement, 'VehicleMonitoringRequest'

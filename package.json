@@ -20,6 +20,7 @@
     "faye": "~0.8.9",
     "carrier": "~0.1.10",
     "elementtree": "~0.1.5",
-    "moment": "~2.0.0"
+    "moment": "~2.0.0",
+    "request": "2.x"
   }
 }
